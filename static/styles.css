@@ -529,14 +529,16 @@ code {
 
 .sidebar-section-title {
   margin: 9px 0 4px;
-  min-height: 30px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px;
-  color: #5c6b77;
-  font-size: 11px;
-  font-weight: 800;
+  padding: 0 9px;
+  color: #1e3444;
+  font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 850;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -562,6 +564,7 @@ code {
   padding: 5px 8px 5px calc(8px + (var(--level) * 14px));
   border-radius: 6px;
   color: #24333f;
+  font-size: 13px;
   font-weight: 650;
 }
 
