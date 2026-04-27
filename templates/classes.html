@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+
+{% block title %}Классы CMDBuild{% endblock %}
+
+{% block content %}
+<section class="content-shell">
+  <header class="toolbar">
+    <div>
+      <p class="eyebrow">CMDBuild REST v3</p>
+      <h1>Доступные классы</h1>
+      <p class="muted">{{ base_url }}{% if username %} · {{ username }}{% endif %}</p>
+    </div>
+
+    <div class="actions">
+      <a class="button secondary" href="/classes">Обновить</a>
+      <form method="post" action="/logout">
+        <button class="button danger" type="submit">Выйти</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="summary">
+    Найдено классов: <strong>{{ total }}</strong>. Видимо: <strong id="visible-class-count">{{ total }}</strong>. Системные атрибуты скрыты.
+  </div>
+
+  <div class="classes-layout">
+    <div id="classes" class="class-grid">
+      {% for cls in classes %}
+        <section
+          id="{{ cls.anchor }}"
+          class="class-panel hierarchy-level-{{ cls.hierarchy_level }} {% if cls.is_superclass %}superclass-panel{% endif %}"
+          data-class-name="{{ cls.name }}"
+          data-parent-name="{{ cls.parent or '' }}"
+          data-tree-panel="class"
+          data-tree-name="{{ cls.name }}"
+        >
+          <header class="class-header">
+            <h2>{{ cls.name }}</h2>
+            {% if cls.is_superclass %}
+              <span class="badge">Суперкласс</span>
+            {% endif %}
+            <p>
+            {{ cls.description or "Без описания" }}
+            · Уровень: {{ cls.hierarchy_level }}
+            {% if cls.parent %} · Родитель: <a href="#{{ cls.parent_anchor }}">{{ cls.parent }}</a>{% endif %}
+            · {% if cls.active %}Активен{% else %}Неактивен{% endif %}
+          </p>
+          </header>
+
+          {% if cls.attributes_error %}
+            <div class="inline-error">{{ cls.attributes_error }}</div>
+          {% endif %}
+
+        {% if cls.inherited_attributes %}
+          <details class="inherited-details">
+            <summary>Унаследованные атрибуты: {{ cls.inherited_attributes|length }}</summary>
+            <div class="table-wrap class-table-wrap">
+              <table class="attributes-table class-attributes-table inherited-table">
+                <thead>
+                  <tr>
+                    <th>Наименование</th>
+                    <th>Тип</th>
+                    <th>Описание</th>
+                    <th>Help text</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for attr in cls.inherited_attributes %}
+                    <tr class="inherited-attribute-row">
+                      <td>
+                        {% if attr.lookup_type %}
+                          <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                          <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
+                        {% else %}
+                          <code>{{ attr.name }}</code>
+                        {% endif %}
+                        <span class="attribute-origin">унаследован</span>
+                      </td>
+                      <td>{{ attr.type }}</td>
+                      <td>{{ attr.description }}</td>
+                      <td>{{ attr.help_text or "—" }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        {% endif %}
+
+        {% if cls.own_attributes %}
+          <div class="table-wrap class-table-wrap">
+            <table class="attributes-table class-attributes-table">
+              <thead>
+                  <tr>
+                    <th>Наименование</th>
+                    <th>Тип</th>
+                    <th>Описание</th>
+                    <th>Help text</th>
+                  </tr>
+              </thead>
+              <tbody>
+                {% for attr in cls.own_attributes %}
+                  <tr>
+                    <td>
+                      {% if attr.lookup_type %}
+                        <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                        <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
+                      {% else %}
+                        <code>{{ attr.name }}</code>
+                      {% endif %}
+                    </td>
+                    <td>{{ attr.type }}</td>
+                    <td>{{ attr.description }}</td>
+                    <td>{{ attr.help_text or "—" }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="muted small">Собственных атрибутов нет</div>
+        {% endif %}
+
+        {% if cls.related_domains %}
+          <div class="class-domains">
+            <div class="class-domains-title">Домены класса</div>
+            <div class="table-wrap class-domains-wrap">
+              <table class="class-domains-table">
+                <thead>
+                  <tr>
+                    <th>Domain</th>
+                    <th>Origin</th>
+                    <th>Destination</th>
+                    <th>Cardinality</th>
+                    <th>Атрибуты</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for domain in cls.related_domains %}
+                    <tr>
+                      <td>
+                        <a href="#{{ domain.anchor }}"><code>{{ domain.name }}</code></a>
+                        {% if domain.description %}
+                          <span class="domain-description">{{ domain.description }}</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="domain-class-links">
+                          {% for item in domain.source_links %}
+                            {% if item.anchor %}
+                              <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                            {% else %}
+                              <span>{{ item.name }}</span>
+                            {% endif %}
+                          {% endfor %}
+                        </div>
+                      </td>
+                      <td>
+                        <div class="domain-class-links">
+                          {% for item in domain.destination_links %}
+                            {% if item.anchor %}
+                              <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                            {% else %}
+                              <span>{{ item.name }}</span>
+                            {% endif %}
+                          {% endfor %}
+                        </div>
+                      </td>
+                      <td>{{ domain.cardinality or "—" }}</td>
+                      <td>
+                        {% if domain.attributes_count %}
+                          <a href="#{{ domain.attributes_anchor }}">Атрибуты: {{ domain.attributes_count }}</a>
+                        {% else %}
+                          <span class="muted small">Нет атрибутов</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+
+    <aside class="hierarchy-sidebar">
+      <div class="sidebar-header">
+        <nav class="sidebar-nav" aria-label="Разделы страницы">
+          <a href="#classes">Classes</a>
+          <a href="#lookups">Lookups</a>
+          <a href="#domains">Domains</a>
+        </nav>
+        <button type="button" class="button secondary compact" id="show-all-classes">Все</button>
+      </div>
+
+      <div class="hierarchy-list">
+        <div class="sidebar-section-title">
+          <button type="button" class="tree-toggle section-toggle" data-section-toggle="class" aria-expanded="true">−</button>
+          <a href="#classes">Classes</a>
+        </div>
+        {% for cls in classes %}
+          <div
+            class="hierarchy-item {% if cls.is_superclass %}superclass-item{% endif %}"
+            style="--level: {{ cls.hierarchy_level }}"
+            data-sidebar-section="class"
+            data-tree-row="class"
+            data-tree-name="{{ cls.name }}"
+            data-tree-parent="{{ cls.parent or '' }}"
+          >
+            <button
+              type="button"
+              class="tree-toggle"
+              data-tree-toggle="class"
+              data-tree-name="{{ cls.name }}"
+              aria-label="Свернуть ветку {{ cls.name }}"
+              aria-expanded="true"
+              {% if not cls.has_children %}disabled{% endif %}
+            >−</button>
+            <a href="#{{ cls.anchor }}">{{ cls.name }}</a>
+          </div>
+        {% endfor %}
+
+        {% if lookup_tables %}
+          <div class="sidebar-section-title">
+            <button type="button" class="tree-toggle section-toggle" data-section-toggle="lookup" aria-expanded="true">−</button>
+            <a href="#lookups">Lookups</a>
+          </div>
+          {% for lookup in lookup_tables %}
+            <div
+              class="hierarchy-item lookup-menu-item"
+              style="--level: {{ lookup.hierarchy_level }}"
+              data-sidebar-section="lookup"
+              data-tree-row="lookup"
+              data-tree-name="{{ lookup.name }}"
+              data-tree-parent="{{ lookup.parent or '' }}"
+            >
+              <button
+                type="button"
+                class="tree-toggle"
+                data-tree-toggle="lookup"
+                data-tree-name="{{ lookup.name }}"
+                aria-label="Свернуть ветку {{ lookup.name }}"
+                aria-expanded="true"
+                {% if not lookup.has_children %}disabled{% endif %}
+              >−</button>
+              <a href="#{{ lookup.anchor }}">{{ lookup.name }}</a>
+            </div>
+          {% endfor %}
+        {% endif %}
+
+        {% if domains %}
+          <div class="sidebar-section-title">
+            <button type="button" class="tree-toggle section-toggle" data-section-toggle="domain" aria-expanded="true">−</button>
+            <a href="#domains">Domains</a>
+          </div>
+          {% for domain in domains %}
+            <div
+              class="hierarchy-item domain-menu-item"
+              style="--level: 0"
+              data-sidebar-section="domain"
+              data-tree-row="domain"
+              data-tree-name="{{ domain.name }}"
+              data-tree-parent=""
+            >
+              <button type="button" class="tree-toggle" disabled aria-hidden="true">−</button>
+              <a href="#{{ domain.anchor }}">{{ domain.name }}</a>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+
+  <section id="domains" class="domains-section" aria-labelledby="domains-section-title">
+    <header class="domains-section-header">
+      <h2 id="domains-section-title">Domains</h2>
+      <p class="muted">Связи между классами CMDBuild.</p>
+    </header>
+
+    {% if domains %}
+      <div class="table-wrap domains-table-wrap">
+        <table class="domains-table">
+          <thead>
+            <tr>
+              <th>Domain</th>
+              <th>Description</th>
+              <th>Origin</th>
+              <th>Destination</th>
+              <th>Cardinality</th>
+              <th>Direct</th>
+              <th>Inverse</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for domain in domains %}
+              <tr id="{{ domain.anchor }}" data-tree-panel="domain" data-tree-name="{{ domain.name }}">
+                <td>
+                  <code>{{ domain.name }}</code>
+                </td>
+                <td>{{ domain.description or "—" }}</td>
+                <td>
+                  <div class="domain-class-links">
+                    {% for item in domain.source_links %}
+                      {% if item.anchor %}
+                        <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                      {% else %}
+                        <span>{{ item.name }}</span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </td>
+                <td>
+                  <div class="domain-class-links">
+                    {% for item in domain.destination_links %}
+                      {% if item.anchor %}
+                        <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                      {% else %}
+                        <span>{{ item.name }}</span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </td>
+                <td>{{ domain.cardinality or "—" }}</td>
+                <td>{{ domain.description_direct or "—" }}</td>
+                <td>{{ domain.description_inverse or "—" }}</td>
+                <td>{% if domain.active is sameas true %}Да{% elif domain.active is sameas false %}Нет{% else %}—{% endif %}</td>
+              </tr>
+              <tr
+                id="{{ domain.attributes_anchor }}"
+                class="domain-attributes-row"
+                data-tree-panel="domain"
+                data-tree-name="{{ domain.name }}"
+              >
+                <td colspan="8">
+                  {% if domain.attributes_error %}
+                    <div class="inline-error">{{ domain.attributes_error }}</div>
+                  {% elif domain.attributes %}
+                    <div class="domain-attributes-title">Атрибуты домена</div>
+                    <div class="table-wrap domain-attributes-wrap">
+                      <table class="domain-attributes-table">
+                        <thead>
+                          <tr>
+                            <th>Наименование</th>
+                            <th>Тип</th>
+                            <th>Описание</th>
+                            <th>Help text</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for attr in domain.attributes %}
+                            <tr>
+                              <td>
+                                {% if attr.lookup_type %}
+                                  <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                                  <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
+                                {% else %}
+                                  <code>{{ attr.name }}</code>
+                                {% endif %}
+                              </td>
+                              <td>{{ attr.type }}</td>
+                              <td>{{ attr.description }}</td>
+                              <td>{{ attr.help_text or "—" }}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  {% else %}
+                    <span class="muted small">Атрибутов домена нет.</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="muted small">Domains не найдены.</div>
+    {% endif %}
+  </section>
+
+  {% if lookup_tables %}
+    <section id="lookups" class="lookup-section" aria-labelledby="lookup-section-title">
+      <header class="lookup-section-header">
+        <h2 id="lookup-section-title">Lookup</h2>
+        <p class="muted">Справочники, используемые атрибутами классов.</p>
+      </header>
+
+      <div class="lookup-grid">
+        {% for lookup in lookup_tables %}
+          <article
+            id="{{ lookup.anchor }}"
+            class="lookup-panel lookup-hierarchy-level-{{ lookup.hierarchy_level }}"
+            data-tree-panel="lookup"
+            data-tree-name="{{ lookup.name }}"
+            data-tree-parent="{{ lookup.parent or '' }}"
+          >
+            <header class="lookup-header">
+              <h3>{{ lookup.name }}</h3>
+              {% if lookup.parent %}
+                <p class="muted">Родитель: <a href="#{{ lookup.parent_anchor }}">{{ lookup.parent }}</a></p>
+              {% endif %}
+              {% if lookup.is_hierarchical %}
+                <span class="badge">Иерархический</span>
+              {% endif %}
+              {% if lookup.description %}
+                <p class="muted">{{ lookup.description }}</p>
+              {% endif %}
+            </header>
+
+            <div class="table-wrap lookup-meta-wrap">
+              <table class="lookup-meta-table">
+                <tbody>
+                  <tr>
+                    <th>Используют классы</th>
+                    <td>
+                      <div class="lookup-usage-list">
+                        {% if lookup.usages %}
+                          {% for usage in lookup.usages %}
+                            <span class="lookup-usage-item">
+                              <a href="#{{ usage.class_anchor }}">{{ usage.class_name }}</a>
+                              <span class="lookup-usage-attrs">({{ usage.attributes | map(attribute="name") | join(", ") }})</span>
+                            </span>
+                          {% endfor %}
+                        {% else %}
+                          <span class="muted small">Классами не используется.</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Тип</th>
+                    <td>{{ lookup.speciality or "default" }}{% if lookup.access_type %} · {{ lookup.access_type }}{% endif %}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {% if lookup.values_error %}
+              <div class="inline-error lookup-error">{{ lookup.values_error }}</div>
+            {% elif lookup["values"] %}
+              <div class="table-wrap lookup-values-wrap">
+                <table class="lookup-values-table">
+                  <thead>
+                    <tr>
+                      <th>Значение</th>
+                      <th>Код</th>
+                      <th>Note</th>
+                      <th>Активен</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for value in lookup["values"] %}
+                      <tr class="{% if value.level > 0 %}lookup-child-row{% endif %}">
+                        <td>
+                          <span
+                            class="lookup-value-name {% if value.has_children %}lookup-value-parent{% endif %}"
+                            style="--lookup-level: {{ value.level }}"
+                          >
+                            {{ value.description or value.code or value.id }}
+                          </span>
+                        </td>
+                        <td><code>{{ value.code }}</code></td>
+                        <td>{{ value.note or "—" }}</td>
+                        <td>{% if value.active is sameas true %}Да{% elif value.active is sameas false %}Нет{% else %}—{% endif %}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="muted small lookup-empty">Значений lookup не найдено.</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/classes.js') }}?v=20260427-tree"></script>
+{% endblock %}

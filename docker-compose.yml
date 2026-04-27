@@ -1,0 +1,49 @@
+services:
+  cmdbuild_db:
+    image: postgis/postgis:${POSTGIS_VERSION}
+    container_name: cmdbuild_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - cmdbuild-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 80s
+
+  cmdbuild_app:
+    image: itmicus/cmdbuild:${CMDBUILD_VERSION}
+    container_name: cmdbuild_app
+    restart: unless-stopped
+    depends_on:
+      cmdbuild_db:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASS: ${POSTGRES_PASSWORD}
+      POSTGRES_PORT: 5432
+      POSTGRES_HOST: cmdbuild_db
+      POSTGRES_DB: ${POSTGRES_DB}
+      CMDBUILD_DUMP: ${CMDBUILD_DUMP}
+      JAVA_OPTS: ${JAVA_OPTS}
+    ports:
+      - "${CMDBUILD_BIND_ADDRESS}:${CMDBUILD_HTTP_PORT}:8080"
+    volumes:
+      - cmdbuild-tomcat:/usr/local/tomcat
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-L", "http://localhost:8080/cmdbuild/ui"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+volumes:
+  cmdbuild-db:
+  cmdbuild-tomcat:
