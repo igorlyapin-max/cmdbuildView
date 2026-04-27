@@ -7,8 +7,10 @@
 
 Приложение должно:
 - выполнять авторизацию пользователя в CMDBuild;
+- давать выбор языка отображения при авторизации и сохранять выбранный язык;
 - получать данные строго от имени авторизованного пользователя;
 - отображать доступные пользователю классы, атрибуты классов, домены, атрибуты доменов, lookup-типы и значения lookup;
+- именовать объекты и стандартные поля в соответствии с выбранным языком, если такие переводы есть в CMDBuild;
 - строить иерархии классов и lookup;
 - давать навигацию по странице через якоря;
 - скрывать и раскрывать части иерархий в правом меню.
@@ -36,9 +38,13 @@ CMDBuild:
 На главной странице должна быть форма авторизации:
 - URL CMDBuild API;
 - login;
-- password.
+- password;
+- display language.
 
 Поля login/password не должны быть предзаполнены значениями admin/admin.
+
+Поле display language должно позволять выбрать язык интерфейса до выполнения авторизации.
+Выбранный язык должен сохраняться в cookie и применяться ко всем последующим запросам пользователя.
 
 Авторизация выполняется запросом:
 POST /sessions?scope=service&returnId=true
@@ -55,10 +61,14 @@ data._id
 Token хранится в httpOnly cookie:
 - cmdbuild_token;
 - cmdbuild_base_url;
-- cmdbuild_username.
+- cmdbuild_username;
+- cmdbuild_language.
 
 Все последующие запросы к CMDBuild должны выполняться с HTTP header:
 CMDBuild-Authorization: <token>
+
+Если выбран язык, все последующие запросы к CMDBuild должны также выполнять HTTP header:
+Accept-Language: <language>
 
 Данные должны быть динамическими:
 - список классов;
@@ -70,7 +80,53 @@ CMDBuild-Authorization: <token>
 
 Все это должно зависеть от прав текущего пользователя CMDBuild.
 
-4. Получение классов
+4. Локализация и источники наименований
+
+Приложение должно использовать выбранный при логине язык для отображения наименований объектов CMDBuild.
+
+Основные источники локализации:
+- REST API CMDBuild с HTTP header Accept-Language;
+- поля _description_translation, _descriptionDirect_translation, _descriptionInverse_translation, если CMDBuild их возвращает;
+- endpoint переводов CMDBuild:
+  GET /translations?scope=service&limit=100000
+- UI locale-файлы CMDBuild:
+  /cmdbuild/ui/app/locales/{language}/Locales.js
+  /cmdbuild/ui/app/locales/{language}/LocalesAdministration.js
+
+Правила выбора наименований:
+- для классов использовать перевод class.<className>.description, затем _description_translation, затем description, затем name;
+- для доменов использовать перевод domain.<domainName>.description, затем _description_translation, затем description, затем name;
+- для descriptionDirect/descriptionInverse использовать соответствующие переводы domain.<domainName>.descriptionDirect и domain.<domainName>.descriptionInverse, затем поля REST API;
+- для lookup-типов использовать перевод lookup.<lookupName>.description, затем description, затем name;
+- для значений lookup использовать перевод lookup.<lookupName>.<code>.description, затем _description_translation, затем description, затем code/id;
+- для атрибутов классов и доменов использовать переводы attribute/domain/class, затем _description_translation/description, затем name.
+
+Если REST API возвращает для стандартных полей технические английские значения вроде Name, Code, Description, Type, Note, Active, Value, то они должны дополнительно переводиться через UI locale-файлы CMDBuild.
+
+Заголовки таблиц и стандартные подписи колонок должны браться из UI locale-файлов CMDBuild:
+- name;
+- type;
+- description;
+- help/helptext;
+- domain;
+- source/origin;
+- destination;
+- cardinality;
+- direct;
+- inverse;
+- active;
+- value;
+- code;
+- note;
+- attributes.
+
+Если перевод в CMDBuild отсутствует, допускается fallback на английский текст приложения.
+
+При объединении UI locale-файлов основная локаль Locales.js имеет приоритет над LocalesAdministration.js. Из административной локали следует добавлять только отсутствующие ключи, чтобы не заменять нормальные пользовательские подписи падежными административными формами.
+
+Технические имена объектов могут показываться как code только там, где это нужно для идентификации, но техническое имя атрибута не должно дублироваться рядом с переведенным названием поля.
+
+5. Получение классов
 
 Классы запрашиваются через:
 GET /classes?scope=service&limit=500
@@ -95,11 +151,11 @@ class-Asset
 
 Если класс является суперклассом, он должен быть помечен визуально:
 - серым цветом;
-- бейджем "Суперкласс".
+- бейджем "Superclass" или локализованной подписью, если она задана.
 
 Если у класса есть родитель, в заголовке класса должна быть ссылка на родительский класс.
 
-5. Атрибуты классов
+6. Атрибуты классов
 
 Атрибуты класса запрашиваются через:
 GET /classes/{className}/attributes?scope=service&limit=500
@@ -124,10 +180,12 @@ GET /classes/{className}/attributes?scope=service&limit=500
 - mode = sysreadonly.
 
 В таблице атрибутов класса должны быть колонки:
-- Наименование;
-- Тип;
-- Описание;
-- Help text.
+- name;
+- type;
+- description;
+- help/helptext.
+
+Фактические заголовки колонок должны отображаться на выбранном языке через механизм локализации из раздела 4.
 
 Собственные атрибуты показываются в основной таблице.
 
@@ -135,14 +193,14 @@ GET /classes/{className}/attributes?scope=service&limit=500
 - должны располагаться перед собственными атрибутами;
 - должны быть скрыты под раскрывающимся блоком с плюсиком;
 - при раскрытии показываются в отдельной таблице;
-- должны быть помечены как "унаследован".
+- должны быть помечены как inherited или локализованной подписью, если она задана.
 
 Для атрибутов типа lookup:
 - имя атрибута должно быть ссылкой на соответствующую таблицу lookup ниже;
 - рядом/ниже должно выводиться имя lookupType;
 - якорь lookup строится как lookup-<lookupType>.
 
-6. Домены под каждым классом
+7. Домены под каждым классом
 
 Под таблицами атрибутов каждого класса необходимо выводить отдельную таблицу "Домены класса", если хотя бы один домен ссылается на данный класс.
 
@@ -153,11 +211,13 @@ GET /classes/{className}/attributes?scope=service&limit=500
 - в destinations.
 
 Таблица "Домены класса" должна содержать колонки:
-- Domain;
-- Origin;
-- Destination;
-- Cardinality;
-- Атрибуты.
+- domain;
+- origin/source;
+- destination;
+- cardinality;
+- attributes.
+
+Фактические заголовки колонок должны отображаться на выбранном языке через механизм локализации из раздела 4.
 
 Требования к ссылкам:
 - Domain должен ссылаться на строку этого домена в полной таблице Domains;
@@ -166,7 +226,7 @@ GET /classes/{className}/attributes?scope=service&limit=500
 - если у домена есть атрибуты, колонка "Атрибуты" должна быть ссылкой на строку атрибутов домена в полной таблице Domains;
 - если у домена нет атрибутов, ссылка не создается, вместо нее выводится текст "Нет атрибутов".
 
-7. Получение доменов
+8. Получение доменов
 
 Список доменов запрашивается через:
 GET /domains?scope=service&limit=1000
@@ -195,7 +255,7 @@ domain-<domainName>
 Якорь строки атрибутов домена:
 domain-<domainName>-attributes
 
-8. Атрибуты доменов
+9. Атрибуты доменов
 
 Атрибуты домена запрашиваются через:
 GET /domains/{domainName}/attributes?scope=service&limit=1000
@@ -214,10 +274,12 @@ GET /domains/{domainName}/attributes?scope=service&limit=1000
 В полной таблице Domains после каждой строки домена должна быть отдельная строка с атрибутами этого домена.
 
 Если у домена есть атрибуты, выводится таблица:
-- Наименование;
-- Тип;
-- Описание;
-- Help text.
+- name;
+- type;
+- description;
+- help/helptext.
+
+Фактические заголовки колонок должны отображаться на выбранном языке через механизм локализации из раздела 4.
 
 Если атрибут домена имеет type = lookup:
 - имя атрибута должно быть ссылкой на соответствующий lookup;
@@ -226,26 +288,28 @@ GET /domains/{domainName}/attributes?scope=service&limit=1000
 Если атрибутов нет, выводится текст:
 Атрибутов домена нет.
 
-9. Полная таблица Domains
+10. Полная таблица Domains
 
 После всех таблиц классов должна располагаться секция:
 Domains
 
 Таблица Domains должна содержать колонки:
-- Domain;
-- Description;
-- Origin;
-- Destination;
-- Cardinality;
-- Direct;
-- Inverse;
-- Active.
+- domain;
+- description;
+- origin/source;
+- destination;
+- cardinality;
+- direct;
+- inverse;
+- active.
+
+Фактические заголовки колонок должны отображаться на выбранном языке через механизм локализации из раздела 4.
 
 Origin и Destination должны быть ссылками на описания соответствующих классов.
 
 Если CMDBuild возвращает массивы sources/destinations, то в ячейках должны выводиться все классы из массивов, каждый как отдельная ссылка.
 
-10. Получение lookup-типов
+11. Получение lookup-типов
 
 Список lookup-типов запрашивается через:
 GET /lookup_types?scope=service&limit=1000
@@ -273,7 +337,7 @@ Lookup-типы сортируются по иерархии:
 Якорь lookup:
 lookup-<lookupName>
 
-11. Значения lookup
+12. Значения lookup
 
 Значения lookup запрашиваются через:
 GET /lookup_types/{lookupName}/values?scope=service&limit=1000
@@ -292,10 +356,12 @@ GET /lookup_types/{lookupName}/values?scope=service&limit=1000
 - note.
 
 В таблице значений lookup должны быть колонки:
-- Значение;
-- Код;
-- Note;
-- Активен.
+- value;
+- code;
+- note;
+- active.
+
+Фактические заголовки колонок должны отображаться на выбранном языке через механизм локализации из раздела 4.
 
 Колонку parent id выводить не нужно.
 
@@ -313,7 +379,7 @@ GET /lookup_types/{lookupName}/values?scope=service&limit=1000
 
 Если lookup используется классами, выводится список классов со ссылками на соответствующие классы и именами атрибутов, где lookup используется.
 
-12. Правая навигационная панель
+13. Правая навигационная панель
 
 Справа должна быть фиксированная панель навигации.
 
@@ -358,7 +424,7 @@ GET /lookup_types/{lookupName}/values?scope=service&limit=1000
 - раскрывает все списки Classes/Lookups/Domains;
 - обновляет счетчик видимых классов.
 
-13. JavaScript-механика отображения
+14. JavaScript-механика отображения
 
 Элементы дерева должны связываться через data-атрибуты:
 - data-tree-row;
@@ -380,7 +446,7 @@ is-section-hidden
 Для этого классы скрытия должны иметь:
 display: none !important;
 
-14. API frontend
+15. API frontend
 
 Frontend должен иметь JSON endpoint:
 GET /api/classes
@@ -395,14 +461,19 @@ HTTP 401
 Если пользователь авторизован, возвращается:
 {
   "success": true,
+  "language": "...",
+  "labels": {...},
   "classes": [...],
   "lookup_tables": [...],
   "domains": [...]
 }
 
+Поле language должно содержать фактически примененный язык.
+Поле labels должно содержать локализованные подписи стандартных колонок и UI-меток, используемых шаблоном.
+
 Этот endpoint используется для проверки и может использоваться внешними инструментами.
 
-15. Ошибки и устойчивость
+16. Ошибки и устойчивость
 
 Если CMDBuild возвращает HTTP ошибку, приложение должно показать понятное сообщение.
 
@@ -414,7 +485,7 @@ HTTP 401
 - класс все равно должен отображаться;
 - внутри блока класса должно быть сообщение об ошибке.
 
-16. Проверка работоспособности
+17. Проверка работоспособности
 
 После изменений необходимо проверять:
 - python syntax check:
@@ -427,14 +498,24 @@ HTTP 401
   - Classes;
   - Lookups;
   - Domains;
-  - Help text;
-  - Домены класса;
-  - Атрибуты домена;
   - ссылки на class-*;
   - ссылки на lookup-*;
   - ссылки на domain-*.
+- для русского языка после логина должны проверяться локализованные заголовки и поля:
+  - Имя;
+  - Тип;
+  - Описание;
+  - Код;
+  - Значение;
+  - Домен;
+  - Источник/Назначения или соответствующие значения из locale-файлов CMDBuild.
+- в HTML не должно оставаться английских заголовков колонок Name/Type/Description/Help text, если в выбранной локали CMDBuild есть соответствующие переводы.
+- техническое имя атрибута не должно выводиться вторым текстом рядом с переведенным названием.
+- страница /classes должна отдавать заголовки, запрещающие кеширование старой версии:
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Pragma: no-cache
 
-17. Запуск
+18. Запуск
 
 Frontend запускается командой:
 .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
@@ -444,4 +525,3 @@ http://localhost:8000/
 
 URL CMDBuild:
 http://localhost:8090/cmdbuild
-
