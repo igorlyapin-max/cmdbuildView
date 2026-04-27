@@ -94,7 +94,7 @@
         const collapsed = Boolean(collapsedByName.get(name));
         button.textContent = collapsed ? "+" : "-";
         button.setAttribute("aria-expanded", String(!collapsed));
-        button.setAttribute("aria-label", `${collapsed ? "Развернуть" : "Свернуть"} ветку ${name}`);
+        button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${name}`);
         button.classList.toggle("is-collapsed", collapsed);
       });
 
@@ -148,7 +148,7 @@
 
       button.textContent = collapsed ? "+" : "-";
       button.setAttribute("aria-expanded", String(!collapsed));
-      button.setAttribute("aria-label", `${collapsed ? "Развернуть" : "Свернуть"} список ${section}`);
+      button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${section} list`);
       button.classList.toggle("is-collapsed", collapsed);
 
       rows.forEach((row) => {

@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 
-{% block title %}Классы CMDBuild{% endblock %}
+{% block title %}CMDBuild classes{% endblock %}
 
 {% block content %}
 <section class="content-shell">
   <header class="toolbar">
     <div>
       <p class="eyebrow">CMDBuild REST v3</p>
-      <h1>Доступные классы</h1>
-      <p class="muted">{{ base_url }}{% if username %} · {{ username }}{% endif %}</p>
+      <h1>Available classes</h1>
+      <p class="muted">{{ base_url }}{% if username %} · {{ username }}{% endif %} · {{ language }}</p>
     </div>
 
     <div class="actions">
-      <a class="button secondary" href="/classes">Обновить</a>
+      <a class="button secondary" href="/classes">Refresh</a>
       <form method="post" action="/logout">
-        <button class="button danger" type="submit">Выйти</button>
+        <button class="button danger" type="submit">Logout</button>
       </form>
     </div>
   </header>
 
   <div class="summary">
-    Найдено классов: <strong>{{ total }}</strong>. Видимо: <strong id="visible-class-count">{{ total }}</strong>. Системные атрибуты скрыты.
+    Classes: <strong>{{ total }}</strong>. Visible: <strong id="visible-class-count">{{ total }}</strong>. System attributes are hidden.
   </div>
 
   <div class="classes-layout">
@@ -35,15 +35,15 @@
           data-tree-name="{{ cls.name }}"
         >
           <header class="class-header">
-            <h2>{{ cls.name }}</h2>
+            <h2>{{ cls.display_name }}</h2>
             {% if cls.is_superclass %}
-              <span class="badge">Суперкласс</span>
+              <span class="badge">Superclass</span>
             {% endif %}
             <p>
-            {{ cls.description or "Без описания" }}
-            · Уровень: {{ cls.hierarchy_level }}
-            {% if cls.parent %} · Родитель: <a href="#{{ cls.parent_anchor }}">{{ cls.parent }}</a>{% endif %}
-            · {% if cls.active %}Активен{% else %}Неактивен{% endif %}
+            {{ labels.code }}: {{ cls.name }}
+            · Level: {{ cls.hierarchy_level }}
+            {% if cls.parent %} · Parent: <a href="#{{ cls.parent_anchor }}">{{ cls.parent_display_name }}</a>{% endif %}
+            · {{ labels.active }}: {% if cls.active %}Yes{% else %}No{% endif %}
           </p>
           </header>
 
@@ -53,15 +53,15 @@
 
         {% if cls.inherited_attributes %}
           <details class="inherited-details">
-            <summary>Унаследованные атрибуты: {{ cls.inherited_attributes|length }}</summary>
+            <summary>Inherited attributes: {{ cls.inherited_attributes|length }}</summary>
             <div class="table-wrap class-table-wrap">
               <table class="attributes-table class-attributes-table inherited-table">
                 <thead>
                   <tr>
-                    <th>Наименование</th>
-                    <th>Тип</th>
-                    <th>Описание</th>
-                    <th>Help text</th>
+                    <th>{{ labels.name }}</th>
+                    <th>{{ labels.type }}</th>
+                    <th>{{ labels.description }}</th>
+                    <th>{{ labels.help_text }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -69,12 +69,12 @@
                     <tr class="inherited-attribute-row">
                       <td>
                         {% if attr.lookup_type %}
-                          <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                          <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.display_name }}</code></a>
                           <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
                         {% else %}
-                          <code>{{ attr.name }}</code>
+                          <code>{{ attr.display_name }}</code>
                         {% endif %}
-                        <span class="attribute-origin">унаследован</span>
+                        <span class="attribute-origin">inherited</span>
                       </td>
                       <td>{{ attr.type }}</td>
                       <td>{{ attr.description }}</td>
@@ -92,10 +92,10 @@
             <table class="attributes-table class-attributes-table">
               <thead>
                   <tr>
-                    <th>Наименование</th>
-                    <th>Тип</th>
-                    <th>Описание</th>
-                    <th>Help text</th>
+                    <th>{{ labels.name }}</th>
+                    <th>{{ labels.type }}</th>
+                    <th>{{ labels.description }}</th>
+                    <th>{{ labels.help_text }}</th>
                   </tr>
               </thead>
               <tbody>
@@ -103,10 +103,10 @@
                   <tr>
                     <td>
                       {% if attr.lookup_type %}
-                        <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                        <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.display_name }}</code></a>
                         <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
                       {% else %}
-                        <code>{{ attr.name }}</code>
+                        <code>{{ attr.display_name }}</code>
                       {% endif %}
                     </td>
                     <td>{{ attr.type }}</td>
@@ -118,29 +118,30 @@
             </table>
           </div>
         {% else %}
-          <div class="muted small">Собственных атрибутов нет</div>
+          <div class="muted small">No own attributes</div>
         {% endif %}
 
         {% if cls.related_domains %}
           <div class="class-domains">
-            <div class="class-domains-title">Домены класса</div>
+            <div class="class-domains-title">Class domains</div>
             <div class="table-wrap class-domains-wrap">
               <table class="class-domains-table">
                 <thead>
                   <tr>
-                    <th>Domain</th>
-                    <th>Origin</th>
-                    <th>Destination</th>
-                    <th>Cardinality</th>
-                    <th>Атрибуты</th>
+                    <th>{{ labels.domain }}</th>
+                    <th>{{ labels.origin }}</th>
+                    <th>{{ labels.destination }}</th>
+                    <th>{{ labels.cardinality }}</th>
+                    <th>{{ labels.attributes }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for domain in cls.related_domains %}
                     <tr>
                       <td>
-                        <a href="#{{ domain.anchor }}"><code>{{ domain.name }}</code></a>
-                        {% if domain.description %}
+                        <a href="#{{ domain.anchor }}"><code>{{ domain.display_name }}</code></a>
+                        {% if domain.display_name != domain.name %}<span class="domain-description">{{ domain.name }}</span>{% endif %}
+                        {% if domain.description and domain.description != domain.display_name %}
                           <span class="domain-description">{{ domain.description }}</span>
                         {% endif %}
                       </td>
@@ -148,9 +149,9 @@
                         <div class="domain-class-links">
                           {% for item in domain.source_links %}
                             {% if item.anchor %}
-                              <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                              <a href="#{{ item.anchor }}">{{ item.display_name }}</a>
                             {% else %}
-                              <span>{{ item.name }}</span>
+                              <span>{{ item.display_name }}</span>
                             {% endif %}
                           {% endfor %}
                         </div>
@@ -159,9 +160,9 @@
                         <div class="domain-class-links">
                           {% for item in domain.destination_links %}
                             {% if item.anchor %}
-                              <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                              <a href="#{{ item.anchor }}">{{ item.display_name }}</a>
                             {% else %}
-                              <span>{{ item.name }}</span>
+                              <span>{{ item.display_name }}</span>
                             {% endif %}
                           {% endfor %}
                         </div>
@@ -169,9 +170,9 @@
                       <td>{{ domain.cardinality or "—" }}</td>
                       <td>
                         {% if domain.attributes_count %}
-                          <a href="#{{ domain.attributes_anchor }}">Атрибуты: {{ domain.attributes_count }}</a>
+                          <a href="#{{ domain.attributes_anchor }}">Attributes: {{ domain.attributes_count }}</a>
                         {% else %}
-                          <span class="muted small">Нет атрибутов</span>
+                          <span class="muted small">No attributes</span>
                         {% endif %}
                       </td>
                     </tr>
@@ -187,12 +188,12 @@
 
     <aside class="hierarchy-sidebar">
       <div class="sidebar-header">
-        <nav class="sidebar-nav" aria-label="Разделы страницы">
+        <nav class="sidebar-nav" aria-label="Page sections">
           <a href="#classes">Classes</a>
           <a href="#lookups">Lookups</a>
           <a href="#domains">Domains</a>
         </nav>
-        <button type="button" class="button secondary compact" id="show-all-classes">Все</button>
+        <button type="button" class="button secondary compact" id="show-all-classes">All</button>
       </div>
 
       <div class="hierarchy-list">
@@ -214,11 +215,11 @@
               class="tree-toggle"
               data-tree-toggle="class"
               data-tree-name="{{ cls.name }}"
-              aria-label="Свернуть ветку {{ cls.name }}"
+              aria-label="Collapse {{ cls.display_name }}"
               aria-expanded="true"
               {% if not cls.has_children %}disabled{% endif %}
             >−</button>
-            <a href="#{{ cls.anchor }}">{{ cls.name }}</a>
+            <a href="#{{ cls.anchor }}">{{ cls.display_name }}</a>
           </div>
         {% endfor %}
 
@@ -241,11 +242,11 @@
                 class="tree-toggle"
                 data-tree-toggle="lookup"
                 data-tree-name="{{ lookup.name }}"
-                aria-label="Свернуть ветку {{ lookup.name }}"
+                aria-label="Collapse {{ lookup.display_name }}"
                 aria-expanded="true"
                 {% if not lookup.has_children %}disabled{% endif %}
               >−</button>
-              <a href="#{{ lookup.anchor }}">{{ lookup.name }}</a>
+              <a href="#{{ lookup.anchor }}">{{ lookup.display_name }}</a>
             </div>
           {% endfor %}
         {% endif %}
@@ -265,7 +266,7 @@
               data-tree-parent=""
             >
               <button type="button" class="tree-toggle" disabled aria-hidden="true">−</button>
-              <a href="#{{ domain.anchor }}">{{ domain.name }}</a>
+              <a href="#{{ domain.anchor }}">{{ domain.display_name }}</a>
             </div>
           {% endfor %}
         {% endif %}
@@ -276,7 +277,7 @@
   <section id="domains" class="domains-section" aria-labelledby="domains-section-title">
     <header class="domains-section-header">
       <h2 id="domains-section-title">Domains</h2>
-      <p class="muted">Связи между классами CMDBuild.</p>
+      <p class="muted">CMDBuild class relations.</p>
     </header>
 
     {% if domains %}
@@ -284,30 +285,31 @@
         <table class="domains-table">
           <thead>
             <tr>
-              <th>Domain</th>
-              <th>Description</th>
-              <th>Origin</th>
-              <th>Destination</th>
-              <th>Cardinality</th>
-              <th>Direct</th>
-              <th>Inverse</th>
-              <th>Active</th>
+              <th>{{ labels.domain }}</th>
+              <th>{{ labels.description }}</th>
+              <th>{{ labels.origin }}</th>
+              <th>{{ labels.destination }}</th>
+              <th>{{ labels.cardinality }}</th>
+              <th>{{ labels.direct }}</th>
+              <th>{{ labels.inverse }}</th>
+              <th>{{ labels.active }}</th>
             </tr>
           </thead>
           <tbody>
             {% for domain in domains %}
               <tr id="{{ domain.anchor }}" data-tree-panel="domain" data-tree-name="{{ domain.name }}">
                 <td>
-                  <code>{{ domain.name }}</code>
+                  <code>{{ domain.display_name }}</code>
+                  {% if domain.display_name != domain.name %}<span class="domain-description">{{ domain.name }}</span>{% endif %}
                 </td>
                 <td>{{ domain.description or "—" }}</td>
                 <td>
                   <div class="domain-class-links">
                     {% for item in domain.source_links %}
                       {% if item.anchor %}
-                        <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                        <a href="#{{ item.anchor }}">{{ item.display_name }}</a>
                       {% else %}
-                        <span>{{ item.name }}</span>
+                        <span>{{ item.display_name }}</span>
                       {% endif %}
                     {% endfor %}
                   </div>
@@ -316,9 +318,9 @@
                   <div class="domain-class-links">
                     {% for item in domain.destination_links %}
                       {% if item.anchor %}
-                        <a href="#{{ item.anchor }}">{{ item.name }}</a>
+                        <a href="#{{ item.anchor }}">{{ item.display_name }}</a>
                       {% else %}
-                        <span>{{ item.name }}</span>
+                        <span>{{ item.display_name }}</span>
                       {% endif %}
                     {% endfor %}
                   </div>
@@ -326,7 +328,7 @@
                 <td>{{ domain.cardinality or "—" }}</td>
                 <td>{{ domain.description_direct or "—" }}</td>
                 <td>{{ domain.description_inverse or "—" }}</td>
-                <td>{% if domain.active is sameas true %}Да{% elif domain.active is sameas false %}Нет{% else %}—{% endif %}</td>
+                <td>{% if domain.active is sameas true %}Yes{% elif domain.active is sameas false %}No{% else %}—{% endif %}</td>
               </tr>
               <tr
                 id="{{ domain.attributes_anchor }}"
@@ -338,15 +340,15 @@
                   {% if domain.attributes_error %}
                     <div class="inline-error">{{ domain.attributes_error }}</div>
                   {% elif domain.attributes %}
-                    <div class="domain-attributes-title">Атрибуты домена</div>
+                    <div class="domain-attributes-title">Domain attributes</div>
                     <div class="table-wrap domain-attributes-wrap">
                       <table class="domain-attributes-table">
                         <thead>
                           <tr>
-                            <th>Наименование</th>
-                            <th>Тип</th>
-                            <th>Описание</th>
-                            <th>Help text</th>
+                            <th>{{ labels.name }}</th>
+                            <th>{{ labels.type }}</th>
+                            <th>{{ labels.description }}</th>
+                            <th>{{ labels.help_text }}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -354,10 +356,10 @@
                             <tr>
                               <td>
                                 {% if attr.lookup_type %}
-                                  <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.name }}</code></a>
+                                  <a class="attribute-lookup-link" href="#{{ attr.lookup_anchor }}"><code>{{ attr.display_name }}</code></a>
                                   <span class="attribute-lookup-type">{{ attr.lookup_type }}</span>
                                 {% else %}
-                                  <code>{{ attr.name }}</code>
+                                  <code>{{ attr.display_name }}</code>
                                 {% endif %}
                               </td>
                               <td>{{ attr.type }}</td>
@@ -369,7 +371,7 @@
                       </table>
                     </div>
                   {% else %}
-                    <span class="muted small">Атрибутов домена нет.</span>
+                    <span class="muted small">No domain attributes.</span>
                   {% endif %}
                 </td>
               </tr>
@@ -378,7 +380,7 @@
         </table>
       </div>
     {% else %}
-      <div class="muted small">Domains не найдены.</div>
+      <div class="muted small">No domains found.</div>
     {% endif %}
   </section>
 
@@ -386,7 +388,7 @@
     <section id="lookups" class="lookup-section" aria-labelledby="lookup-section-title">
       <header class="lookup-section-header">
         <h2 id="lookup-section-title">Lookup</h2>
-        <p class="muted">Справочники, используемые атрибутами классов.</p>
+        <p class="muted">Lookup tables used by class and domain attributes.</p>
       </header>
 
       <div class="lookup-grid">
@@ -399,12 +401,15 @@
             data-tree-parent="{{ lookup.parent or '' }}"
           >
             <header class="lookup-header">
-              <h3>{{ lookup.name }}</h3>
+              <h3>{{ lookup.display_name }}</h3>
+              {% if lookup.display_name != lookup.name %}
+                <p class="muted">{{ labels.code }}: {{ lookup.name }}</p>
+              {% endif %}
               {% if lookup.parent %}
-                <p class="muted">Родитель: <a href="#{{ lookup.parent_anchor }}">{{ lookup.parent }}</a></p>
+                <p class="muted">Parent: <a href="#{{ lookup.parent_anchor }}">{{ lookup.parent_display_name }}</a></p>
               {% endif %}
               {% if lookup.is_hierarchical %}
-                <span class="badge">Иерархический</span>
+                <span class="badge">Hierarchical</span>
               {% endif %}
               {% if lookup.description %}
                 <p class="muted">{{ lookup.description }}</p>
@@ -415,24 +420,24 @@
               <table class="lookup-meta-table">
                 <tbody>
                   <tr>
-                    <th>Используют классы</th>
+                    <th>Used by classes</th>
                     <td>
                       <div class="lookup-usage-list">
                         {% if lookup.usages %}
                           {% for usage in lookup.usages %}
                             <span class="lookup-usage-item">
-                              <a href="#{{ usage.class_anchor }}">{{ usage.class_name }}</a>
-                              <span class="lookup-usage-attrs">({{ usage.attributes | map(attribute="name") | join(", ") }})</span>
+                              <a href="#{{ usage.class_anchor }}">{{ usage.class_display_name }}</a>
+                              <span class="lookup-usage-attrs">({{ usage.attributes | map(attribute="display_name") | join(", ") }})</span>
                             </span>
                           {% endfor %}
                         {% else %}
-                          <span class="muted small">Классами не используется.</span>
+                          <span class="muted small">Not used by classes.</span>
                         {% endif %}
                       </div>
                     </td>
                   </tr>
                   <tr>
-                    <th>Тип</th>
+                    <th>{{ labels.type }}</th>
                     <td>{{ lookup.speciality or "default" }}{% if lookup.access_type %} · {{ lookup.access_type }}{% endif %}</td>
                   </tr>
                 </tbody>
@@ -446,10 +451,10 @@
                 <table class="lookup-values-table">
                   <thead>
                     <tr>
-                      <th>Значение</th>
-                      <th>Код</th>
-                      <th>Note</th>
-                      <th>Активен</th>
+                      <th>{{ labels.value }}</th>
+                      <th>{{ labels.code }}</th>
+                      <th>{{ labels.note }}</th>
+                      <th>{{ labels.active }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -465,14 +470,14 @@
                         </td>
                         <td><code>{{ value.code }}</code></td>
                         <td>{{ value.note or "—" }}</td>
-                        <td>{% if value.active is sameas true %}Да{% elif value.active is sameas false %}Нет{% else %}—{% endif %}</td>
+                        <td>{% if value.active is sameas true %}Yes{% elif value.active is sameas false %}No{% else %}—{% endif %}</td>
                       </tr>
                     {% endfor %}
                   </tbody>
                 </table>
               </div>
             {% else %}
-              <div class="muted small lookup-empty">Значений lookup не найдено.</div>
+              <div class="muted small lookup-empty">No lookup values found.</div>
             {% endif %}
           </article>
         {% endfor %}
@@ -484,5 +489,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='/classes.js') }}?v=20260427-tree"></script>
+<script src="{{ url_for('static', path='/classes.js') }}?v=20260427-lang"></script>
 {% endblock %}

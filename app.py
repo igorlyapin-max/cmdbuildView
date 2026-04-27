@@ -19,6 +19,45 @@ DEFAULT_CMDBUILD_URL = "http://127.0.0.1:8090/cmdbuild/services/rest/v3"
 REQUEST_TIMEOUT_SECONDS = 20
 SYSTEM_ATTRIBUTE_NAMES = {"Id", "IdClass", "IdTenant"}
 ANCHOR_SAFE_RE = re.compile(r"[^A-Za-z0-9_-]+")
+JS_LOCALE_ENTRY_RE = re.compile(r"(?<![\w$])([A-Za-z_][A-Za-z0-9_]*)\s*:\s*'((?:\\'|[^'])*)'")
+DEFAULT_LANGUAGE = "en"
+LANGUAGES = [
+    {"code": "ar", "description": "العربية"},
+    {"code": "bg", "description": "Български"},
+    {"code": "cs", "description": "Čeština"},
+    {"code": "da", "description": "Dansk"},
+    {"code": "de", "description": "Deutsch"},
+    {"code": "el_GR", "description": "Ελληνικά"},
+    {"code": "en", "description": "English"},
+    {"code": "es", "description": "Español"},
+    {"code": "fa", "description": "Persian"},
+    {"code": "fr", "description": "Français"},
+    {"code": "hr", "description": "Hrvatski"},
+    {"code": "hu", "description": "Hungarian"},
+    {"code": "id", "description": "Bahasa Indonesia"},
+    {"code": "it", "description": "Italiano"},
+    {"code": "ja", "description": "日本語"},
+    {"code": "ko", "description": "한국어"},
+    {"code": "mn", "description": "Монгол"},
+    {"code": "ms", "description": "Bahasa Melayu"},
+    {"code": "nl", "description": "Nederlands"},
+    {"code": "no", "description": "Norsk"},
+    {"code": "pl", "description": "Polski"},
+    {"code": "pt_BR", "description": "Português Brasil"},
+    {"code": "pt_PT", "description": "Português Portugal"},
+    {"code": "ro", "description": "Română"},
+    {"code": "ru", "description": "Русский"},
+    {"code": "sk", "description": "Slovenčina"},
+    {"code": "sl", "description": "Slovenščina"},
+    {"code": "sr", "description": "Srpski"},
+    {"code": "sr_RS", "description": "Српски"},
+    {"code": "th", "description": "ภาษาไทย"},
+    {"code": "tr", "description": "Türkçe"},
+    {"code": "ua", "description": "Українська"},
+    {"code": "vn", "description": "Tiếng Việt"},
+    {"code": "zh_CN", "description": "中文"},
+]
+LANGUAGE_CODES = {language["code"] for language in LANGUAGES}
 
 
 app = FastAPI(title="CMDBuild Browser")
@@ -51,6 +90,7 @@ def cmdbuild_request(
     *,
     method: str = "GET",
     token: str | None = None,
+    language: str | None = None,
     payload: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -64,6 +104,8 @@ def cmdbuild_request(
     headers = {"Accept": "application/json"}
     if token:
         headers["CMDBuild-Authorization"] = token
+    if language:
+        headers["Accept-Language"] = language
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -76,28 +118,145 @@ def cmdbuild_request(
     except HTTPError as exc:
         raw_error = exc.read().decode("utf-8", errors="replace")
         raise CmdbuildError(
-            f"CMDBuild вернул HTTP {exc.code}",
+            f"CMDBuild returned HTTP {exc.code}",
             status_code=exc.code,
             details=raw_error,
         ) from exc
     except URLError as exc:
-        raise CmdbuildError(f"Не удалось подключиться к CMDBuild: {exc.reason}") from exc
+        raise CmdbuildError(f"Could not connect to CMDBuild: {exc.reason}") from exc
     except TimeoutError as exc:
-        raise CmdbuildError("CMDBuild не ответил за отведенное время") from exc
+        raise CmdbuildError("CMDBuild did not respond before timeout") from exc
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise CmdbuildError("CMDBuild вернул не JSON ответ", details=raw[:500]) from exc
+        raise CmdbuildError("CMDBuild returned a non-JSON response", details=raw[:500]) from exc
 
     if data.get("success") is False:
-        message = "CMDBuild отклонил запрос"
+        message = "CMDBuild rejected the request"
         messages = data.get("messages") or []
         if messages and isinstance(messages, list):
             message = messages[0].get("message") or message
         raise CmdbuildError(message, details=data)
 
     return data
+
+
+def normalize_language(raw_language: str | None) -> str:
+    language = (raw_language or DEFAULT_LANGUAGE).strip()
+    return language if language in LANGUAGE_CODES else DEFAULT_LANGUAGE
+
+
+def load_translation_map(base_url: str, token: str, language: str) -> dict[str, str]:
+    if not language:
+        return {}
+
+    try:
+        result = cmdbuild_request(
+            base_url,
+            "translations",
+            token=token,
+            language=language,
+            params={"scope": "service", "limit": 100000},
+        )
+    except CmdbuildError:
+        return {}
+    translations: dict[str, str] = {}
+    for item in result.get("data", []):
+        if item.get("lang") == language and item.get("code") and item.get("value"):
+            translations[item["code"]] = item["value"]
+    return translations
+
+
+def ui_base_url_from_rest(base_url: str) -> str:
+    value = base_url.rstrip("/")
+    suffix = "/services/rest/v3"
+    if value.endswith(suffix):
+        return value[: -len(suffix)]
+    return value
+
+
+def parse_js_locale_labels(raw_locale: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for key, value in JS_LOCALE_ENTRY_RE.findall(raw_locale):
+        normalized_key = key.casefold()
+        if normalized_key not in labels:
+            labels[normalized_key] = value.replace("\\'", "'")
+    return labels
+
+
+def load_ui_locale_labels(base_url: str, language: str) -> dict[str, str]:
+    if not language or language == DEFAULT_LANGUAGE:
+        return {}
+
+    ui_base_url = ui_base_url_from_rest(base_url)
+    labels: dict[str, str] = {}
+    for path in (
+        f"ui/app/locales/{quote(language, safe='')}/Locales.js",
+        f"ui/app/locales/{quote(language, safe='')}/LocalesAdministration.js",
+    ):
+        url = f"{ui_base_url}/{path}"
+        try:
+            with urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                raw_locale = response.read().decode("utf-8", errors="replace")
+        except (HTTPError, URLError, TimeoutError):
+            continue
+        for key, value in parse_js_locale_labels(raw_locale).items():
+            labels.setdefault(key, value)
+    return labels
+
+
+def template_labels(ui_labels: dict[str, str]) -> dict[str, str]:
+    return {
+        "active": ui_labels.get("active") or "Active",
+        "attributes": ui_labels.get("attributes") or "Attributes",
+        "cardinality": ui_labels.get("cardinality") or "Cardinality",
+        "code": ui_labels.get("code") or "Code",
+        "description": ui_labels.get("description") or "Description",
+        "destination": ui_labels.get("destination") or "Destination",
+        "direct": ui_labels.get("direct") or "Direct",
+        "domain": ui_labels.get("domain") or "Domain",
+        "help_text": ui_labels.get("helptext") or ui_labels.get("help") or "Help text",
+        "inverse": ui_labels.get("inverse") or "Inverse",
+        "name": ui_labels.get("name") or "Name",
+        "note": ui_labels.get("note") or "Note",
+        "origin": ui_labels.get("origin") or ui_labels.get("source") or "Origin",
+        "type": ui_labels.get("type") or "Type",
+        "value": ui_labels.get("value") or "Value",
+    }
+
+
+def translated_value(translations: dict[str, str], *codes: str) -> str:
+    for code in codes:
+        if code and translations.get(code):
+            return translations[code]
+    return ""
+
+
+def translated_description(
+    item: dict[str, Any],
+    translations: dict[str, str],
+    *codes: str,
+    fallback_name: str = "",
+) -> str:
+    return (
+        translated_value(translations, *codes)
+        or item.get("_description_translation")
+        or item.get("description")
+        or fallback_name
+    )
+
+
+def localized_field_label(
+    raw_name: str,
+    metadata_description: str,
+    ui_labels: dict[str, str],
+) -> str:
+    normalized_name = raw_name.casefold()
+    normalized_description = metadata_description.casefold()
+    if metadata_description and normalized_description != normalized_name:
+        return ui_labels.get(normalized_description) or metadata_description
+    return ui_labels.get(normalized_name) or metadata_description or raw_name
 
 
 def is_system_attribute(attribute: dict[str, Any]) -> bool:
@@ -111,13 +270,32 @@ def make_anchor(prefix: str, value: str) -> str:
     return f"{prefix}-{slug or 'item'}"
 
 
-def normalize_attribute(attribute: dict[str, Any]) -> dict[str, Any]:
+def normalize_attribute(
+    attribute: dict[str, Any],
+    translations: dict[str, str] | None = None,
+    ui_labels: dict[str, str] | None = None,
+    *,
+    owner_name: str = "",
+) -> dict[str, Any]:
+    translations = translations or {}
+    ui_labels = ui_labels or {}
     lookup_type = attribute.get("lookupType") or ""
+    name = attribute.get("name") or ""
+    metadata_description = translated_description(
+        attribute,
+        translations,
+        f"attribute.{owner_name}.{name}.description",
+        f"class.{owner_name}.attribute.{name}.description",
+        f"domain.{owner_name}.attribute.{name}.description",
+        fallback_name=name,
+    )
+    display_name = localized_field_label(name, metadata_description, ui_labels)
 
     return {
-        "name": attribute.get("name") or "",
+        "name": name,
+        "display_name": display_name,
         "type": attribute.get("type") or "",
-        "description": attribute.get("description") or attribute.get("_description_translation") or "",
+        "description": display_name,
         "help_text": attribute.get("help") or "",
         "inherited": bool(attribute.get("inherited")),
         "lookup_type": lookup_type,
@@ -125,11 +303,19 @@ def normalize_attribute(attribute: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_class_attributes(base_url: str, token: str, class_name: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def load_class_attributes(
+    base_url: str,
+    token: str,
+    class_name: str,
+    translations: dict[str, str],
+    ui_labels: dict[str, str],
+    language: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     result = cmdbuild_request(
         base_url,
         f"classes/{class_name}/attributes",
         token=token,
+        language=language,
         params={"scope": "service", "limit": 500},
     )
 
@@ -140,7 +326,7 @@ def load_class_attributes(base_url: str, token: str, class_name: str) -> tuple[l
         if is_system_attribute(raw_attribute):
             continue
 
-        attribute = normalize_attribute(raw_attribute)
+        attribute = normalize_attribute(raw_attribute, translations, ui_labels, owner_name=class_name)
         if attribute["inherited"]:
             inherited_attributes.append(attribute)
         else:
@@ -172,6 +358,7 @@ def register_lookup_usage(
         class_name,
         {
             "class_name": class_name,
+            "class_display_name": class_item.get("display_name") or class_name,
             "class_anchor": class_item.get("anchor") or make_anchor("class", class_name),
             "attributes": [],
         },
@@ -179,6 +366,7 @@ def register_lookup_usage(
     usage["attributes"].append(
         {
             "name": attribute.get("name") or "",
+            "display_name": attribute.get("display_name") or attribute.get("name") or "",
             "inherited": bool(attribute.get("inherited")),
         }
     )
@@ -204,17 +392,28 @@ def lookup_parent_id(value: dict[str, Any]) -> str | None:
     return str(parent) if parent is not None else None
 
 
-def build_lookup_hierarchy(raw_values: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+def build_lookup_hierarchy(
+    raw_values: list[dict[str, Any]],
+    lookup_name: str,
+    translations: dict[str, str],
+) -> tuple[list[dict[str, Any]], bool]:
     values: list[dict[str, Any]] = []
     by_id: dict[str, dict[str, Any]] = {}
     children_by_parent: dict[str | None, list[dict[str, Any]]] = {}
 
     for raw_value in raw_values:
         value_id = lookup_value_id(raw_value)
+        code = raw_value.get("code") or ""
+        description = translated_description(
+            raw_value,
+            translations,
+            f"lookup.{lookup_name}.{code}.description",
+            fallback_name=code or value_id,
+        )
         value = {
             "id": value_id,
-            "code": raw_value.get("code") or "",
-            "description": raw_value.get("description") or raw_value.get("_description_translation") or "",
+            "code": code,
+            "description": description,
             "parent_id": lookup_parent_id(raw_value),
             "note": raw_value.get("note") or "",
             "active": raw_value.get("active"),
@@ -307,11 +506,16 @@ def load_domains(
     base_url: str,
     token: str,
     class_anchors: dict[str, str],
+    class_labels: dict[str, str],
+    translations: dict[str, str],
+    ui_labels: dict[str, str],
+    language: str,
 ) -> list[dict[str, Any]]:
     result = cmdbuild_request(
         base_url,
         "domains",
         token=token,
+        language=language,
         params={"scope": "service", "limit": 1000},
     )
 
@@ -327,6 +531,7 @@ def load_domains(
                 base_url,
                 f"domains/{quote(domain_name, safe='')}",
                 token=token,
+                language=language,
                 params={"scope": "service"},
             )
             domain = detail.get("data") or raw_domain
@@ -338,12 +543,12 @@ def load_domains(
         sources = domain.get("sources") or ([source] if source else [])
         destinations = domain.get("destinations") or ([destination] if destination else [])
         source_links = [
-            {"name": class_name, "anchor": class_anchors.get(class_name, "")}
+            {"name": class_name, "display_name": class_labels.get(class_name, class_name), "anchor": class_anchors.get(class_name, "")}
             for class_name in sources
             if class_name
         ]
         destination_links = [
-            {"name": class_name, "anchor": class_anchors.get(class_name, "")}
+            {"name": class_name, "display_name": class_labels.get(class_name, class_name), "anchor": class_anchors.get(class_name, "")}
             for class_name in destinations
             if class_name
         ]
@@ -354,22 +559,50 @@ def load_domains(
                 base_url,
                 f"domains/{quote(domain_name, safe='')}/attributes",
                 token=token,
+                language=language,
                 params={"scope": "service", "limit": 1000},
             )
             attributes = [
-                normalize_attribute(raw_attribute)
+                normalize_attribute(raw_attribute, translations, ui_labels, owner_name=domain_name)
                 for raw_attribute in attributes_result.get("data", [])
                 if not is_system_attribute(raw_attribute)
             ]
         except CmdbuildError as exc:
             attributes_error = exc.message
 
+        description = translated_description(
+            domain,
+            translations,
+            f"domain.{domain_name}.description",
+            fallback_name=domain_name,
+        )
+        description_direct = (
+            translated_value(
+                translations,
+                f"domain.{domain_name}.descriptionDirect",
+                f"domain.{domain_name}.direct",
+            )
+            or domain.get("_descriptionDirect_translation")
+            or domain.get("descriptionDirect")
+            or ""
+        )
+        description_inverse = (
+            translated_value(
+                translations,
+                f"domain.{domain_name}.descriptionInverse",
+                f"domain.{domain_name}.inverse",
+            )
+            or domain.get("_descriptionInverse_translation")
+            or domain.get("descriptionInverse")
+            or ""
+        )
         domains.append(
             {
                 "name": domain_name,
+                "display_name": description,
                 "anchor": make_anchor("domain", domain_name),
                 "attributes_anchor": f"{make_anchor('domain', domain_name)}-attributes",
-                "description": domain.get("description") or "",
+                "description": description,
                 "source": source,
                 "source_anchor": class_anchors.get(source, ""),
                 "source_links": source_links,
@@ -379,8 +612,8 @@ def load_domains(
                 "destination_links": destination_links,
                 "destination_names": destinations,
                 "cardinality": domain.get("cardinality") or "",
-                "description_direct": domain.get("descriptionDirect") or domain.get("_descriptionDirect_translation") or "",
-                "description_inverse": domain.get("descriptionInverse") or domain.get("_descriptionInverse_translation") or "",
+                "description_direct": description_direct,
+                "description_inverse": description_inverse,
                 "is_master_detail": bool(domain.get("isMasterDetail")),
                 "active": domain.get("active"),
                 "attributes": attributes,
@@ -408,6 +641,7 @@ def attach_domains_to_classes(classes: list[dict[str, Any]], domains: list[dict[
             classes_by_name[class_name]["related_domains"].append(
                 {
                     "name": domain["name"],
+                    "display_name": domain.get("display_name") or domain["name"],
                     "anchor": domain["anchor"],
                     "description": domain.get("description") or "",
                     "source_links": domain.get("source_links", []),
@@ -423,12 +657,15 @@ def load_lookup_tables(
     base_url: str,
     token: str,
     lookup_index: dict[str, dict[str, Any]],
+    translations: dict[str, str],
+    language: str,
 ) -> list[dict[str, Any]]:
     lookup_tables: list[dict[str, Any]] = []
     result = cmdbuild_request(
         base_url,
         "lookup_types",
         token=token,
+        language=language,
         params={"scope": "service", "limit": 1000},
     )
 
@@ -459,9 +696,16 @@ def load_lookup_tables(
         )
         table = {
             "name": lookup_name,
-            "description": lookup.get("description") or "",
+            "display_name": translated_value(translations, f"lookup.{lookup_name}.description") or lookup.get("description") or lookup_name,
+            "description": translated_value(translations, f"lookup.{lookup_name}.description") or lookup.get("description") or "",
             "parent": parent if parent in lookup_index else "",
             "parent_anchor": make_anchor("lookup", parent) if parent in lookup_index else "",
+            "parent_display_name": (
+                translated_value(translations, f"lookup.{parent}.description")
+                or lookup_index.get(parent, {}).get("description")
+                or parent
+                or ""
+            ) if parent in lookup_index else "",
             "hierarchy_level": lookup.get("hierarchy_level", 0),
             "has_children": bool(lookup.get("has_children")),
             "speciality": lookup.get("speciality") or "",
@@ -478,9 +722,10 @@ def load_lookup_tables(
                 base_url,
                 f"lookup_types/{quote(lookup_name, safe='')}/values",
                 token=token,
+                language=language,
                 params={"scope": "service", "limit": 1000},
             )
-            table["values"], table["is_hierarchical"] = build_lookup_hierarchy(result.get("data", []))
+            table["values"], table["is_hierarchical"] = build_lookup_hierarchy(result.get("data", []), lookup_name, translations)
         except CmdbuildError as exc:
             table["values_error"] = exc.message
 
@@ -489,11 +734,18 @@ def load_lookup_tables(
     return lookup_tables
 
 
-def load_classes_with_attributes(base_url: str, token: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def load_classes_with_attributes(
+    base_url: str,
+    token: str,
+    language: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+    translations = load_translation_map(base_url, token, language)
+    ui_labels = load_ui_locale_labels(base_url, language)
     result = cmdbuild_request(
         base_url,
         "classes",
         token=token,
+        language=language,
         params={"scope": "service", "limit": 500},
     )
 
@@ -503,12 +755,20 @@ def load_classes_with_attributes(base_url: str, token: str) -> tuple[list[dict[s
         for class_item in classes
         if class_item.get("name")
     }
+    class_labels: dict[str, str] = {}
     lookup_index: dict[str, dict[str, Any]] = {}
 
     for class_item in classes:
         class_name = class_item.get("name")
         class_item["anchor"] = class_anchors.get(class_name, make_anchor("class", class_name or ""))
         class_item["parent_anchor"] = class_anchors.get(class_item.get("parent"), "")
+        class_item["display_name"] = translated_description(
+            class_item,
+            translations,
+            f"class.{class_name}.description" if class_name else "",
+            fallback_name=class_name or "",
+        )
+        class_labels[class_name] = class_item["display_name"]
         class_item["own_attributes"] = []
         class_item["inherited_attributes"] = []
         class_item["display_attributes"] = []
@@ -516,11 +776,11 @@ def load_classes_with_attributes(base_url: str, token: str) -> tuple[list[dict[s
         class_item["is_superclass"] = bool(class_item.get("prototype"))
 
         if not class_name:
-            class_item["attributes_error"] = "У класса нет имени."
+            class_item["attributes_error"] = "Class has no name."
             continue
 
         try:
-            own_attributes, inherited_attributes = load_class_attributes(base_url, token, class_name)
+            own_attributes, inherited_attributes = load_class_attributes(base_url, token, class_name, translations, ui_labels, language)
             class_item["own_attributes"] = own_attributes
             class_item["inherited_attributes"] = inherited_attributes
             class_item["display_attributes"] = own_attributes
@@ -529,10 +789,14 @@ def load_classes_with_attributes(base_url: str, token: str) -> tuple[list[dict[s
         except CmdbuildError as exc:
             class_item["attributes_error"] = exc.message
 
-    lookup_tables = load_lookup_tables(base_url, token, lookup_index)
-    domains = load_domains(base_url, token, class_anchors)
+    for class_item in classes:
+        parent = class_item.get("parent")
+        class_item["parent_display_name"] = class_labels.get(parent, parent or "")
+
+    lookup_tables = load_lookup_tables(base_url, token, lookup_index, translations, language)
+    domains = load_domains(base_url, token, class_anchors, class_labels, translations, ui_labels, language)
     attach_domains_to_classes(classes, domains)
-    return classes, lookup_tables, domains
+    return classes, lookup_tables, domains, template_labels(ui_labels)
 
 
 def class_sort_label(class_item: dict[str, Any]) -> str:
@@ -602,7 +866,13 @@ async def read_form(request: Request) -> dict[str, str]:
     return {key: values[0] if values else "" for key, values in parsed.items()}
 
 
-def login_response(request: Request, *, error: str | None = None, cmdbuild_url: str = DEFAULT_CMDBUILD_URL) -> HTMLResponse:
+def login_response(
+    request: Request,
+    *,
+    error: str | None = None,
+    cmdbuild_url: str = DEFAULT_CMDBUILD_URL,
+    language: str = DEFAULT_LANGUAGE,
+) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -610,6 +880,8 @@ def login_response(request: Request, *, error: str | None = None, cmdbuild_url: 
             "request": request,
             "error": error,
             "cmdbuild_url": cmdbuild_url,
+            "language": normalize_language(language),
+            "languages": LANGUAGES,
         },
     )
 
@@ -619,10 +891,11 @@ async def index(
     request: Request,
     cmdbuild_token: str | None = Cookie(default=None),
     cmdbuild_base_url: str | None = Cookie(default=None),
+    cmdbuild_language: str | None = Cookie(default=None),
 ):
     if cmdbuild_token and cmdbuild_base_url:
         return RedirectResponse("/classes", status_code=303)
-    return login_response(request)
+    return login_response(request, language=normalize_language(cmdbuild_language))
 
 
 @app.post("/login")
@@ -631,12 +904,14 @@ async def login(request: Request):
     base_url = normalize_base_url(form.get("cmdbuild_url", DEFAULT_CMDBUILD_URL))
     username = form.get("username", "").strip()
     password = form.get("password", "")
+    language = normalize_language(form.get("language"))
 
     if not username or not password:
         return login_response(
             request,
-            error="Укажите имя пользователя и пароль.",
+            error="Enter username and password.",
             cmdbuild_url=base_url,
+            language=language,
         )
 
     try:
@@ -645,17 +920,19 @@ async def login(request: Request):
             "sessions",
             method="POST",
             params={"scope": "service", "returnId": "true"},
+            language=language,
             payload={"username": username, "password": password},
         )
         token = result["data"]["_id"]
     except (KeyError, CmdbuildError) as exc:
-        message = exc.message if isinstance(exc, CmdbuildError) else "CMDBuild не вернул session token."
-        return login_response(request, error=message, cmdbuild_url=base_url)
+        message = exc.message if isinstance(exc, CmdbuildError) else "CMDBuild did not return a session token."
+        return login_response(request, error=message, cmdbuild_url=base_url, language=language)
 
     response = RedirectResponse("/classes", status_code=303)
     response.set_cookie("cmdbuild_token", token, httponly=True, samesite="lax")
     response.set_cookie("cmdbuild_base_url", base_url, httponly=True, samesite="lax")
     response.set_cookie("cmdbuild_username", username, httponly=True, samesite="lax")
+    response.set_cookie("cmdbuild_language", language, httponly=True, samesite="lax")
     return response
 
 
@@ -665,49 +942,67 @@ async def classes_page(
     cmdbuild_token: str | None = Cookie(default=None),
     cmdbuild_base_url: str | None = Cookie(default=None),
     cmdbuild_username: str | None = Cookie(default=None),
+    cmdbuild_language: str | None = Cookie(default=None),
 ):
     if not cmdbuild_token or not cmdbuild_base_url:
         return RedirectResponse("/", status_code=303)
 
+    language = normalize_language(cmdbuild_language)
     try:
-        classes, lookup_tables, domains = load_classes_with_attributes(cmdbuild_base_url, cmdbuild_token)
+        classes, lookup_tables, domains, labels = load_classes_with_attributes(cmdbuild_base_url, cmdbuild_token, language)
     except CmdbuildError as exc:
-        response = login_response(request, error=exc.message, cmdbuild_url=cmdbuild_base_url)
+        response = login_response(request, error=exc.message, cmdbuild_url=cmdbuild_base_url, language=language)
         response.delete_cookie("cmdbuild_token")
         return response
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "classes.html",
         {
             "request": request,
             "base_url": cmdbuild_base_url,
             "username": cmdbuild_username or "",
+            "language": language,
             "classes": classes,
             "lookup_tables": lookup_tables,
             "domains": domains,
+            "labels": labels,
             "total": len(classes),
         },
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.get("/api/classes")
 async def classes_api(
     cmdbuild_token: str | None = Cookie(default=None),
     cmdbuild_base_url: str | None = Cookie(default=None),
+    cmdbuild_language: str | None = Cookie(default=None),
 ):
     if not cmdbuild_token or not cmdbuild_base_url:
         return JSONResponse({"success": False, "message": "not authenticated"}, status_code=401)
 
+    language = normalize_language(cmdbuild_language)
     try:
-        classes, lookup_tables, domains = load_classes_with_attributes(cmdbuild_base_url, cmdbuild_token)
+        classes, lookup_tables, domains, labels = load_classes_with_attributes(cmdbuild_base_url, cmdbuild_token, language)
     except CmdbuildError as exc:
         return JSONResponse(
             {"success": False, "message": exc.message, "details": exc.details},
             status_code=502,
         )
 
-    return JSONResponse({"success": True, "classes": classes, "lookup_tables": lookup_tables, "domains": domains})
+    return JSONResponse(
+        {
+            "success": True,
+            "language": language,
+            "labels": labels,
+            "classes": classes,
+            "lookup_tables": lookup_tables,
+            "domains": domains,
+        }
+    )
 
 
 @app.post("/logout")
@@ -716,6 +1011,7 @@ async def logout():
     response.delete_cookie("cmdbuild_token")
     response.delete_cookie("cmdbuild_base_url")
     response.delete_cookie("cmdbuild_username")
+    response.delete_cookie("cmdbuild_language")
     return response
 
 
