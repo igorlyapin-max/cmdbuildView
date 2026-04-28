@@ -30,15 +30,6 @@
         <input name="password" type="password" autocomplete="current-password" required>
       </label>
 
-      <label>
-        <span>Display language</span>
-        <select name="language">
-          {% for item in languages %}
-            <option value="{{ item.code }}" {% if item.code == language %}selected{% endif %}>{{ item.description }}</option>
-          {% endfor %}
-        </select>
-      </label>
-
       <button type="submit">Log in and load classes</button>
     </form>
   </div>

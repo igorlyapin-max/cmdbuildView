@@ -899,12 +899,15 @@ async def index(
 
 
 @app.post("/login")
-async def login(request: Request):
+async def login(
+    request: Request,
+    cmdbuild_language: str | None = Cookie(default=None),
+):
     form = await read_form(request)
     base_url = normalize_base_url(form.get("cmdbuild_url", DEFAULT_CMDBUILD_URL))
     username = form.get("username", "").strip()
     password = form.get("password", "")
-    language = normalize_language(form.get("language"))
+    language = normalize_language(form.get("language") or cmdbuild_language)
 
     if not username or not password:
         return login_response(
@@ -963,6 +966,7 @@ async def classes_page(
             "base_url": cmdbuild_base_url,
             "username": cmdbuild_username or "",
             "language": language,
+            "languages": LANGUAGES,
             "classes": classes,
             "lookup_tables": lookup_tables,
             "domains": domains,
@@ -972,6 +976,19 @@ async def classes_page(
     )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.post("/language")
+async def set_language(request: Request):
+    form = await read_form(request)
+    language = normalize_language(form.get("language"))
+    target = form.get("next", "/classes")
+    if not target.startswith("/") or target.startswith("//"):
+        target = "/classes"
+
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie("cmdbuild_language", language, httponly=True, samesite="lax")
     return response
 
 
@@ -1011,7 +1028,6 @@ async def logout():
     response.delete_cookie("cmdbuild_token")
     response.delete_cookie("cmdbuild_base_url")
     response.delete_cookie("cmdbuild_username")
-    response.delete_cookie("cmdbuild_language")
     return response
 
 

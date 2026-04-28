@@ -164,6 +164,28 @@ button:hover,
   flex-wrap: wrap;
 }
 
+.language-switcher {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.language-switcher label {
+  gap: 4px;
+  font-size: 12px;
+  color: #5c6b77;
+}
+
+.language-switcher select {
+  width: 170px;
+  height: 36px;
+  font-size: 13px;
+}
+
+.language-switcher .language-submit {
+  min-height: 36px;
+}
+
 .summary {
   background: #ffffff;
   border: 1px solid #d8e0e7;
